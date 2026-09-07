@@ -1,0 +1,6 @@
+[defaults]
+inventory = ./inventory/rancher.yml
+
+[inventory]
+enable_plugins = auto, verdel.rancher.rancher, yaml, ini
+unparsed_is_failed = true

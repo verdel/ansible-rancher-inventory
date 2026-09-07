@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+.ruff_cache/
+
+# Local controller configuration and build output
+ansible.cfg
+inventory/local*
+inventory/*.crt
+inventory/*.pem
+.collections/
+dist/
+*.tar.gz

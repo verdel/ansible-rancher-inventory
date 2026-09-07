@@ -1,0 +1,97 @@
+# Collection inventory source. The filename must end in rancher.yml or rancher.yaml.
+plugin: verdel.rancher.rancher
+
+# Connection: set RANCHER_URL and RANCHER_TOKEN in the controller environment.
+# Alternatively, uncomment these options. Do not commit a real token.
+# url: https://rancher.example.com
+# token: token-xxxxx:secret
+
+# Verify the Rancher HTTPS certificate using this CA bundle.
+validate_certs: true
+# ca_path: /etc/ssl/certs/company-ca.pem
+# Per-request timeout in seconds; must be positive.
+timeout: 30
+
+# Exact cluster names or IDs. [] selects all visible clusters.
+clusters: []
+# Example selection:
+# clusters:
+#   - production
+#   - c-m-abcdefgh
+
+# Include the Rancher management cluster (also required to select local explicitly).
+include_local: false
+# Skip Connected=False clusters with a warning, even when explicitly selected.
+# Other API errors are still fatal. The plugin default is false.
+skip_disconnected: true
+
+# Use the first matching address as ansible_host, in this order.
+address_types:
+  - InternalIP
+  - ExternalIP
+  - Hostname
+
+# Kubernetes label selector applied to nodes. An empty string selects all nodes.
+label_selector: ""
+# label_selector: 'environment=production,node-role.kubernetes.io/worker'
+
+# Expression errors: false skips the failed expression; true fails inventory loading.
+# Applies to compose, cluster_compose, groups and keyed_groups, not API errors.
+strict: false
+
+# Allow Ansible extra vars (-e) in expressions with the highest precedence.
+use_extra_vars: false
+
+# Shared host variables for every cluster. Values are Jinja2 expressions without
+# {{ }}. Quote string literals inside the expression; quote numeric expressions too.
+# This example adds metadata only. Uncomment SSH settings to use them.
+# compose:
+#   inventory_source: "'rancher'"
+#   node_alias: kubernetes_node_name
+#   ansible_user: "'ubuntu'"
+#   ansible_port: '22'
+#   ansible_ssh_private_key_file: "'/home/user/.ssh/id_ed25519'"
+#   ansible_host: kubernetes_node_name
+
+# Per-cluster expressions, matched by exact name or ID.
+# Precedence: cluster ID > cluster name > global compose, per variable.
+# Expressions are merged before evaluation and must not depend on other composed
+# variables. Entries outside the selected clusters are ignored. Use {} to disable.
+# cluster_compose:
+#   production:
+#     inventory_environment: "'production'"
+#     ansible_user: "'deploy'"
+#   c-m-abcdefgh:
+#     inventory_environment: "'test-1'"
+#     ansible_port: '2222'
+
+# Fixed group names with Jinja2 conditions. Composed variables are available here.
+# Use {} to disable. These groups supplement the plugin's automatic groups.
+# groups:
+#   ready_nodes: kubernetes_ready
+#   schedulable_nodes: not kubernetes_unschedulable
+#   ready_workers: kubernetes_ready and 'worker' in kubernetes_roles
+
+# Omit a leading separator when a keyed group has no prefix.
+# The Ansible default is true; this example uses false for cleaner names.
+leading_separator: false
+
+# Derive group names from host variable values. Lists create one group per item.
+# Use [] to disable. Each entry below demonstrates a separate grouping rule.
+# keyed_groups:
+#   # Example: role_worker; all generated role groups belong to node_roles.
+#   - key: kubernetes_roles
+#     prefix: role
+#     separator: '_'
+#     parent_group: node_roles
+#     # Omit the separator for an empty/None value. Default: true.
+#     trailing_separator: false
+
+#   # Example: environment_test or environment_unknown.
+#   - key: kubernetes_labels.get('environment', '')
+#     prefix: environment
+#     separator: '_'
+#     parent_group: environments
+#     # Replacement for an empty/None value (not an undefined expression).
+#     # Mutually exclusive with trailing_separator: use separate entries.
+#     default_value: unknown

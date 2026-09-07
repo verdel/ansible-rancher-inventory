@@ -1,0 +1,38 @@
+namespace: verdel
+name: rancher
+version: 1.0.0
+readme: README.md
+authors:
+  - verdel (https://github.com/verdel)
+description: Ansible dynamic inventory for Kubernetes nodes discovered through Rancher.
+license:
+  - GPL-3.0-or-later
+tags:
+  - rancher
+  - kubernetes
+  - inventory
+  - infrastructure
+dependencies: {}
+repository: https://github.com/verdel/ansible-rancher-inventory
+documentation: https://github.com/verdel/ansible-rancher-inventory/blob/main/README.md
+homepage: https://github.com/verdel/ansible-rancher-inventory
+issues: https://github.com/verdel/ansible-rancher-inventory/issues
+build_ignore:
+  - .gitignore
+  - .github
+  - .pre-commit-config.yaml
+  - .venv
+  - .pytest_cache
+  - .ruff_cache
+  - .collections
+  - dist
+  - tests
+  - ansible.cfg
+  - ansible.cfg.example
+  - inventory/local*
+  - inventory/*.crt
+  - inventory/*.pem
+  - '**/__pycache__'
+  - requirements-dev.txt
+  - ruff.toml
+  - '*.tar.gz'
