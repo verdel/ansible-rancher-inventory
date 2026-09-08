@@ -3,6 +3,7 @@ __pycache__/
 .pytest_cache/
 *.pyc
 .ruff_cache/
+.sanity-tree-path
 
 # Local controller configuration and build output
 ansible.cfg

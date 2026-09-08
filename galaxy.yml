@@ -24,6 +24,7 @@ build_ignore:
   - .venv
   - .pytest_cache
   - .ruff_cache
+  - .sanity-tree-path
   - .collections
   - dist
   - tests

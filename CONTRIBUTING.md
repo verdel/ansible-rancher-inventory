@@ -1,6 +1,6 @@
 # Contributing
 
-Use Python 3.12 or newer for development with the latest supported Ansible Core.
+Use Python 3.14 or newer for development with the latest supported Ansible Core.
 Create a virtual environment and install the development dependencies:
 
 ```sh
@@ -10,14 +10,30 @@ pip install -r requirements-dev.txt
 pre-commit install
 ```
 
-Run the checks before opening a pull request:
+## Checks
+
+Run these before opening a pull request:
 
 ```sh
-ruff check .
-ruff format --check .
-pytest -q
+pre-commit run --all-files   # Ruff lint and format
+pytest tests/ -q
 ansible-galaxy collection build --output-path dist --force
+./.github/scripts/prepare-collection-tree.sh
+SANITY_ROOT="$(cat .sanity-tree-path)"
+cd "$SANITY_ROOT/ansible_collections/verdel/rancher"
+ANSIBLE_COLLECTIONS_PATH="$SANITY_ROOT" ansible-test sanity --local --color no
 ```
+
+The preparation script creates a temporary collection tree under
+`ansible_collections/verdel/rancher` and writes its root directory to
+`.sanity-tree-path`. This is required because `ansible-test` expects a collection
+to use that directory layout. The `--local` option explicitly runs the sanity tests in the local environment,
+without Docker or a remote test host.
+
+CI runs linting, pytest, and the same sanity procedure on every push and pull
+request to `main`. It creates
+`SANITY_ROOT` with `$(mktemp -d)`, prepares the collection tree, and runs the
+sanity test as another step in the main test job.
 
 Tests cover the plugin logic and build/install the collection into a temporary
 directory to verify loading by FQCN through Ansible's auto inventory plugin.
@@ -48,7 +64,8 @@ Before publishing, configure the repository Actions secret `GALAXY_API_TOKEN`
 with an Ansible Galaxy API token authorized to publish the `verdel.rancher`
 collection. The GitHub Release description and asset are updated using the
 automatically provided `GITHUB_TOKEN`; the release job grants it
-`contents: write` permission.
+`contents: write` permission. The release workflow also runs the sanity suite
+before publishing the collection.
 
 Publishing to Galaxy runs before updating the GitHub Release. If that step
 fails, the workflow does not upload the asset or update the release description.

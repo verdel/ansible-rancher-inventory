@@ -12,14 +12,14 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
 
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
-          python-version: "3.12"
+          python-version: "3.14"
           cache: pip
           cache-dependency-path: |
             requirements.txt
@@ -37,3 +37,16 @@ jobs:
 
       - name: Run tests
         run: python -m pytest -q
+
+      - name: Prepare collection tree for ansible-test
+        run: |
+          SANITY_ROOT=$(mktemp -d)
+          export SANITY_ROOT
+          echo "SANITY_ROOT=$SANITY_ROOT" >> "$GITHUB_ENV"
+          bash ./.github/scripts/prepare-collection-tree.sh
+
+      - name: Run ansible-test sanity
+        working-directory: ${{ env.SANITY_ROOT }}/ansible_collections/verdel/rancher
+        env:
+          ANSIBLE_COLLECTIONS_PATH: ${{ env.SANITY_ROOT }}
+        run: ansible-test sanity --local --color no

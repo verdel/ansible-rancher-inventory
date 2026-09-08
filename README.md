@@ -22,29 +22,34 @@ Example inventory output:
 
 ## Installation
 
-Use Ansible Core 2.16–2.19 and a Python version supported by the selected
-Ansible release. Python 3.12 is used in CI. No Rancher or Kubernetes Python SDK
-is required.
+Use Ansible Core and a Python version supported by the selected Ansible release.
+Python 3.14 is used in CI. No Rancher or Kubernetes Python SDK is required.
 
-Once this repository is available on GitHub, install directly from Git:
+Install the published collection from Ansible Galaxy:
 
 ```sh
-ansible-galaxy collection install git+https://github.com/verdel/ansible-rancher-inventory.git
+ansible-galaxy collection install verdel.rancher
 ```
 
-Or use a collection requirements file:
+To pin a version in a collection requirements file:
 
 ```yaml
 collections:
-  - name: https://github.com/verdel/ansible-rancher-inventory.git
-    type: git
+  - name: verdel.rancher
+    version: "1.0.0"
 ```
 
 ```sh
 ansible-galaxy collection install -r collections-requirements.yml
 ```
 
-To build and install from a local checkout:
+You can also install an unreleased revision directly from Git:
+
+```sh
+ansible-galaxy collection install git+https://github.com/verdel/ansible-rancher-inventory.git
+```
+
+To build and install a development checkout locally:
 
 ```sh
 python3 -m venv .venv
@@ -53,8 +58,6 @@ pip install -r requirements.txt
 ansible-galaxy collection build --output-path dist --force
 ansible-galaxy collection install dist/verdel-rancher-1.0.0.tar.gz --force
 ```
-
-These commands do not require the collection to be published on Ansible Galaxy.
 
 ## Getting started
 
@@ -92,11 +95,11 @@ outside the published example. Local inventory files, CA bundles, and
 plugin: verdel.rancher.rancher
 url: https://rancher.example.com
 # Prefer passing the token through RANCHER_TOKEN.
-clusters: [production, c-m-abcdefgh]  # Exact names or IDs; [] = all visible clusters
+clusters: [production, c-m-abcdefgh] # Exact names or IDs; [] = all visible clusters
 include_local: false
-skip_disconnected: false  # true = skip clusters reporting Connected=False
-address_types: [InternalIP, ExternalIP, Hostname]  # First matching address
-label_selector: 'environment=production'
+skip_disconnected: false # true = skip clusters reporting Connected=False
+address_types: [InternalIP, ExternalIP, Hostname] # First matching address
+label_selector: "environment=production"
 validate_certs: true
 # ca_path: /etc/ssl/certs/company-ca.pem
 timeout: 30
@@ -148,9 +151,48 @@ Host variables: `rancher_cluster_id`, `rancher_cluster_name`,
 `kubernetes_roles`, `kubernetes_addresses`, `kubernetes_ready`,
 `kubernetes_unschedulable`, and `ansible_host`.
 
-Both APIs support pagination. There is no caching: each run reads current data.
-The token is not stored in hostvars. HTTP redirects and pagination links to
-another server are rejected.
+Both APIs support pagination. The token is not stored in hostvars or cached
+data. HTTP redirects and pagination links to another server are rejected.
+
+## Caching
+
+The plugin supports Ansible's standard inventory cache options. Caching stores
+the Rancher cluster records and Kubernetes Node API responses, then rebuilds
+hosts, variables, and groups from that data on every run. The Rancher token is
+never included in the cached value.
+
+```yaml
+plugin: verdel.rancher.rancher
+cache: true
+cache_plugin: ansible.builtin.jsonfile
+cache_timeout: 3600
+cache_connection: ~/.cache/ansible/rancher_inventory
+cache_prefix: ansible_inventory_rancher_
+```
+
+- `cache` enables inventory caching. Its default is `false`.
+- `cache_plugin` selects the Ansible cache backend. The default `memory` backend
+  lasts only for the current process; use `ansible.builtin.jsonfile` for reuse
+  between CLI runs.
+- `cache_timeout` is the maximum cache age in seconds; the default is `3600`.
+- `cache_connection` is backend-specific connection data. For `jsonfile`, it is
+  the cache directory.
+- `cache_prefix` prefixes backend keys or files; its default is
+  `ansible_inventory_`.
+
+Force a fresh Rancher request and replace the cached entry with:
+
+```sh
+ansible-inventory -i inventory/rancher.yml --graph --flush-cache
+```
+
+Changing `compose`, `cluster_compose`, `groups`, or `keyed_groups` takes effect
+while using existing cached API data. After changing `clusters`, `include_local`,
+`skip_disconnected`, `label_selector`, or other options that affect fetched
+data, run once with `--flush-cache`. Cache entries are keyed by the inventory
+source path, so two inventory files use separate entries. API failures do not
+replace an existing valid entry. Protect a persistent cache directory because
+node labels, annotations, addresses, and cluster metadata are stored there.
 
 ## Disconnected clusters
 
@@ -172,13 +214,13 @@ or overrides them for a cluster selected by its exact name or ID:
 ```yaml
 compose:
   ansible_user: "'ubuntu'"
-  ansible_port: '22'
+  ansible_port: "22"
 cluster_compose:
   rancher-test-cluster:
     ansible_user: "'deploy'"
     ansible_ssh_private_key_file: "'/home/user/.ssh/test_cluster'"
   c-m-abcdefgh:
-    ansible_port: '2222'
+    ansible_port: "2222"
 ```
 
 For each variable, precedence from highest to lowest is: cluster ID, cluster
@@ -196,12 +238,20 @@ are not applied.
 pip install -r requirements-dev.txt
 pytest -q
 ansible-doc -t inventory verdel.rancher.rancher
+./.github/scripts/prepare-collection-tree.sh
+SANITY_ROOT="$(cat .sanity-tree-path)"
+cd "$SANITY_ROOT/ansible_collections/verdel/rancher"
+ANSIBLE_COLLECTIONS_PATH="$SANITY_ROOT" ansible-test sanity --local --color no
 ```
 
 Tests use the actual Ansible plugin loader with simulated API responses.
 They also build and install the collection in a temporary directory and verify
 FQCN discovery through the auto loader. No live Rancher access is required.
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow.
+`ansible-test` also checks Ansible collection structure, plugin documentation,
+and coding conventions. The preparation script creates its required collection
+layout in a temporary directory; see [CONTRIBUTING.md](CONTRIBUTING.md) for the
+local setup. CI runs it as part of the main test job on Python 3.14, using the
+Ansible Core version selected by `requirements-dev.txt`.
 
 ## API references
 
@@ -225,15 +275,13 @@ lint rules without modifying files:
 
 ```sh
 ruff check .
+ruff format --check .
 ```
 
 Rules are configured in `ruff.toml`: Ruff's default error checks plus import
 sorting. Ruff is pinned to the same version in the development dependencies,
-pre-commit hook, and CI workflow. CI runs on pushes, pull requests, and manual
-dispatch. It checks lint, formatting, tests, and collection installation. A separate
-release workflow validates the release tag, reruns checks, builds the collection,
-and attaches its archive to the published GitHub Release.
-
+pre-commit hook, and CI workflow. CI runs on pushes to main branch and pull requests. It checks lint, formatting, tests, and collection installation. A separate
+release workflow validates the release tag, reruns checks, builds the collection, publish collection to ansible galaxy and attaches its archive to the published GitHub Release.
 
 ## Repository layout
 
