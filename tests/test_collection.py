@@ -21,7 +21,8 @@ def test_build_install_and_auto_inventory(tmp_path):
         RANCHER_URL="https://rancher.example.com",
         RANCHER_TOKEN="test-token",
     )
-    galaxy = str(Path(sys.executable).with_name("ansible-galaxy"))
+    galaxy = [sys.executable, "-m", "ansible.cli.galaxy"]
+    ansible_doc = [sys.executable, "-m", "ansible.cli.doc"]
 
     def run(args):
         return subprocess.run(
@@ -34,7 +35,7 @@ def test_build_install_and_auto_inventory(tmp_path):
             timeout=60,
         )
 
-    run([galaxy, "collection", "build", str(ROOT), "--output-path", str(tmp_path)])
+    run([*galaxy, "collection", "build", str(ROOT), "--output-path", str(tmp_path)])
     (artifact,) = tmp_path.glob("verdel-rancher-*.tar.gz")
     with tarfile.open(artifact) as archive:
         names = archive.getnames()
@@ -43,9 +44,7 @@ def test_build_install_and_auto_inventory(tmp_path):
         assert "LICENSE" in names
         assert "inventory/rancher.yml" in names
         assert not any(
-            name.startswith(
-                (".venv", ".collections", "dist", "tests", "inventory/local")
-            )
+            name.startswith((".venv", ".collections", "dist", "tests", "inventory/local"))
             or name.endswith((".crt", ".pem"))
             or name == "ansible.cfg"
             for name in names
@@ -55,7 +54,7 @@ def test_build_install_and_auto_inventory(tmp_path):
         assert manifest["collection_info"]["name"] == "rancher"
     run(
         [
-            galaxy,
+            *galaxy,
             "collection",
             "install",
             str(artifact),
@@ -66,22 +65,17 @@ def test_build_install_and_auto_inventory(tmp_path):
     )
     doc = run(
         [
-            str(Path(sys.executable).with_name("ansible-doc")),
+            *ansible_doc,
             "-t",
             "inventory",
             "verdel.rancher.rancher",
             "--json",
         ]
     )
-    assert (
-        "cluster_compose"
-        in json.loads(doc.stdout)["verdel.rancher.rancher"]["doc"]["options"]
-    )
+    assert "cluster_compose" in json.loads(doc.stdout)["verdel.rancher.rancher"]["doc"]["options"]
+    assert "cache_plugin" in json.loads(doc.stdout)["verdel.rancher.rancher"]["doc"]["options"]
     source = tmp_path / "test.rancher.yml"
-    source.write_text(
-        "plugin: verdel.rancher.rancher\nstrict: true\n"
-        "compose:\n  ansible_user: \"'ubuntu'\"\n"
-    )
+    source.write_text("plugin: verdel.rancher.rancher\nstrict: true\ncompose:\n  ansible_user: \"'ubuntu'\"\n")
     run(
         [
             sys.executable,
