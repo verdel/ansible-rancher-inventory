@@ -146,7 +146,7 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
                 response.close()
         except HTTPError as exc:
             raise AnsibleParserError(f"Rancher API returned HTTP {exc.code} for {target.path}") from None
-        except ValueError, UnicodeError:
+        except (ValueError, UnicodeError):
             raise AnsibleParserError(
                 f"Rancher API returned invalid JSON for {target.path}; check the Rancher proxy response"
             ) from None
