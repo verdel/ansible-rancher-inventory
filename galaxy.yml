@@ -3,7 +3,7 @@ name: rancher
 version: 1.0.0
 readme: README.md
 authors:
-  - verdel (https://github.com/verdel)
+  - Vadim Aleksandrov (https://github.com/verdel)
 description: Ansible dynamic inventory for Kubernetes nodes discovered through Rancher.
 license:
   - GPL-3.0-or-later
@@ -33,7 +33,7 @@ build_ignore:
   - inventory/local*
   - inventory/*.crt
   - inventory/*.pem
-  - '**/__pycache__'
+  - "**/__pycache__"
   - requirements-dev.txt
   - ruff.toml
-  - '*.tar.gz'
+  - "*.tar.gz"
