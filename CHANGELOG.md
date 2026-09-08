@@ -10,4 +10,5 @@ Initial collection packaging for `verdel.rancher`.
 - Select SSH addresses and expose Kubernetes labels, roles, and node status.
 - Support global and per-cluster compose expressions and constructed groups.
 - Provide TLS verification, custom CA bundles, and request timeouts.
+- Support Ansible inventory caching with memory and persistent cache backends.
 - Install the inventory plugin as `verdel.rancher.rancher`.

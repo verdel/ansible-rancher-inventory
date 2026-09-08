@@ -1,22 +1,11 @@
-# Copyright (c) 2026, verdel
+# Copyright (c) 2026 Vadim Aleksandrov (https://github.com/verdel)
+# GNU General Public License v3.0+ (see LICENSE or https://www.gnu.org/licenses/gpl-3.0.txt)
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """Discover Kubernetes nodes through the Rancher 2.x API proxy."""
 
-import json
-import re
-import socket
-import ssl
-from urllib.error import HTTPError, URLError
-from urllib.parse import quote, urlencode, urljoin, urlsplit
-
-from ansible.errors import AnsibleParserError
-from ansible.module_utils.urls import open_url
-from ansible.plugins.inventory import BaseInventoryPlugin, Constructable
-
 DOCUMENTATION = r"""
 name: rancher
-plugin_type: inventory
 short_description: Kubernetes nodes from Rancher 2.x
 description:
   - Lists Rancher clusters and reads Kubernetes Nodes through the Rancher proxy.
@@ -24,6 +13,7 @@ description:
   - Host names use the cluster name and Kubernetes node name separated by two underscores.
 extends_documentation_fragment:
   - ansible.builtin.constructed
+  - ansible.builtin.inventory_cache
 options:
   plugin:
     description: Plugin name.
@@ -62,7 +52,8 @@ options:
   cluster_compose:
     description:
       - Mapping of cluster names or IDs to dictionaries of Jinja2 expressions.
-      - Expressions supplement global C(compose). For the same variable, cluster name overrides global and cluster ID overrides name.
+      - Expressions supplement global C(compose).
+      - For the same variable, cluster name overrides global and cluster ID overrides name.
       - Expressions are merged before evaluation and cannot depend on other composed variables.
     type: dict
     default: {}
@@ -110,14 +101,23 @@ keyed_groups:
     prefix: cluster
 """
 
+import json
+import re
+import socket
+import ssl
+from urllib.error import HTTPError, URLError
+from urllib.parse import quote, urlencode, urljoin, urlsplit
 
-class InventoryModule(BaseInventoryPlugin, Constructable):
+from ansible.errors import AnsibleParserError
+from ansible.module_utils.urls import open_url
+from ansible.plugins.inventory import BaseInventoryPlugin, Cacheable, Constructable
+
+
+class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
     NAME = "rancher"
 
     def verify_file(self, path):
-        return super().verify_file(path) and path.endswith(
-            ("rancher.yml", "rancher.yaml")
-        )
+        return super().verify_file(path) and path.endswith(("rancher.yml", "rancher.yaml"))
 
     def _request(self, url):
         # Pagination must never send the bearer token to another origin.
@@ -126,9 +126,7 @@ class InventoryModule(BaseInventoryPlugin, Constructable):
             base.scheme,
             base.netloc,
         ) or target.username:
-            raise AnsibleParserError(
-                "Rancher pagination URL points outside the configured server"
-            )
+            raise AnsibleParserError("Rancher pagination URL points outside the configured server")
         try:
             response = open_url(
                 url,
@@ -147,21 +145,18 @@ class InventoryModule(BaseInventoryPlugin, Constructable):
             finally:
                 response.close()
         except HTTPError as exc:
+            raise AnsibleParserError(f"Rancher API returned HTTP {exc.code} for {target.path}") from None
+        except ValueError, UnicodeError:
             raise AnsibleParserError(
-                "Rancher API returned HTTP %s for %s" % (exc.code, target.path)
-            ) from None
-        except (ValueError, UnicodeError):
-            raise AnsibleParserError(
-                "Rancher API returned invalid JSON for %s; check the Rancher proxy response"
-                % target.path
+                f"Rancher API returned invalid JSON for {target.path}; check the Rancher proxy response"
             ) from None
         except (URLError, OSError) as exc:
             reason = exc.reason if isinstance(exc, URLError) else exc
             # Classify failures without printing arbitrary exception text, headers or bodies.
             if isinstance(reason, (TimeoutError, socket.timeout)):
                 detail = (
-                    "request timed out after %s seconds; check cluster connectivity or increase timeout"
-                    % self.get_option("timeout")
+                    f"request timed out after {self.get_option('timeout')} seconds; "
+                    "check cluster connectivity or increase timeout"
                 )
             elif isinstance(reason, ssl.SSLCertVerificationError):
                 detail = "TLS certificate verification failed; configure ca_path with the trusted CA bundle"
@@ -170,18 +165,10 @@ class InventoryModule(BaseInventoryPlugin, Constructable):
             elif isinstance(reason, socket.gaierror):
                 detail = "DNS resolution failed"
             elif isinstance(reason, ConnectionError):
-                detail = (
-                    "connection refused, reset or interrupted (%s)"
-                    % type(reason).__name__
-                )
+                detail = f"connection refused, reset or interrupted ({type(reason).__name__})"
             else:
-                detail = (
-                    "transport error (%s); check network and proxy settings"
-                    % type(reason).__name__
-                )
-            raise AnsibleParserError(
-                "Rancher API request failed for %s: %s" % (target.path, detail)
-            ) from None
+                detail = f"transport error ({type(reason).__name__}); check network and proxy settings"
+            raise AnsibleParserError(f"Rancher API request failed for {target.path}: {detail}") from None
         if not isinstance(result, dict):
             raise AnsibleParserError("Rancher API response must be a JSON object")
         return result
@@ -196,21 +183,14 @@ class InventoryModule(BaseInventoryPlugin, Constructable):
             seen.add(url)
             page = self._request(url)
             if not isinstance(page.get("data"), list):
-                raise AnsibleParserError(
-                    "Rancher cluster response is missing data list"
-                )
+                raise AnsibleParserError("Rancher cluster response is missing data list")
             result.extend(page["data"])
             next_url = (page.get("pagination") or {}).get("next")
             url = urljoin(url, next_url) if next_url else None
         return result
 
     def _nodes(self, cluster_id):
-        endpoint = (
-            self._base_url
-            + "/k8s/clusters/"
-            + quote(cluster_id, safe="")
-            + "/api/v1/nodes"
-        )
+        endpoint = self._base_url + "/k8s/clusters/" + quote(cluster_id, safe="") + "/api/v1/nodes"
         params = {"limit": 500}
         if self.get_option("label_selector"):
             params["labelSelector"] = self.get_option("label_selector")
@@ -218,17 +198,13 @@ class InventoryModule(BaseInventoryPlugin, Constructable):
         while True:
             page = self._request(endpoint + "?" + urlencode(params))
             if not isinstance(page.get("items"), list):
-                raise AnsibleParserError(
-                    "Kubernetes node response is missing items list for " + cluster_id
-                )
+                raise AnsibleParserError("Kubernetes node response is missing items list for " + cluster_id)
             result.extend(page["items"])
             continuation = (page.get("metadata") or {}).get("continue")
             if not continuation:
                 return result
             if continuation in seen:
-                raise AnsibleParserError(
-                    "Repeated Kubernetes pagination token for " + cluster_id
-                )
+                raise AnsibleParserError("Repeated Kubernetes pagination token for " + cluster_id)
             seen.add(continuation)
             params["continue"] = continuation
 
@@ -253,9 +229,7 @@ class InventoryModule(BaseInventoryPlugin, Constructable):
             None,
         )
         if not address:
-            raise AnsibleParserError(
-                "No matching connection address for %s/%s" % (cluster_id, name)
-            )
+            raise AnsibleParserError(f"No matching connection address for {cluster_id}/{name}")
         labels = metadata.get("labels") or {}
         roles = sorted(
             {
@@ -281,9 +255,7 @@ class InventoryModule(BaseInventoryPlugin, Constructable):
                 c.get("type") == "Ready" and c.get("status") == "True"
                 for c in (node.get("status") or {}).get("conditions", [])
             ),
-            "kubernetes_unschedulable": bool(
-                (node.get("spec") or {}).get("unschedulable", False)
-            ),
+            "kubernetes_unschedulable": bool((node.get("spec") or {}).get("unschedulable", False)),
         }
         for key, value in variables.items():
             self.inventory.set_variable(host, key, value)
@@ -300,101 +272,103 @@ class InventoryModule(BaseInventoryPlugin, Constructable):
         compose.update(cluster_compose.get(cluster_id, {}))
         self._set_composite_vars(compose, variables, host, strict=strict)
         variables.update(self.inventory.get_host(host).get_vars())
-        self._add_host_to_composed_groups(
-            self.get_option("groups"), variables, host, strict=strict
-        )
-        self._add_host_to_keyed_groups(
-            self.get_option("keyed_groups"), variables, host, strict=strict
-        )
+        self._add_host_to_composed_groups(self.get_option("groups"), variables, host, strict=strict)
+        self._add_host_to_keyed_groups(self.get_option("keyed_groups"), variables, host, strict=strict)
+
+    def _fetch_records(self):
+        requested = set(self.get_option("clusters"))
+        clusters = [c for c in self._clusters() if self.get_option("include_local") or c.get("id") != "local"]
+        matched = {value for cluster in clusters for value in (cluster.get("id"), cluster.get("name"))}
+        if requested - matched:
+            raise AnsibleParserError(
+                "Requested clusters were not found or are excluded: " + ", ".join(sorted(requested - matched))
+            )
+
+        # Fetch everything before populating inventory, so API failures do not
+        # produce partial inventory or replace a valid cache entry.
+        records = []
+        for cluster in clusters:
+            if requested and not requested.intersection((cluster.get("id"), cluster.get("name"))):
+                continue
+            if not cluster.get("id"):
+                raise AnsibleParserError("Rancher cluster is missing id")
+            if any(
+                condition.get("type") == "Connected" and condition.get("status") == "False"
+                for condition in cluster.get("conditions") or []
+            ):
+                cluster_name = cluster.get("name") or cluster["id"]
+                if self.get_option("skip_disconnected"):
+                    self.display.warning(
+                        f"Skipping disconnected Rancher cluster {cluster_name} ({cluster['id']}): Connected=False"
+                    )
+                    continue
+                raise AnsibleParserError(
+                    f"Rancher cluster {cluster_name} ({cluster['id']}) is disconnected "
+                    "(Connected=False); restore the cluster agent connection, select "
+                    "connected clusters using clusters, or enable skip_disconnected"
+                )
+            records.extend((cluster, node) for node in self._nodes(cluster["id"]))
+        return records
+
+    @staticmethod
+    def _validate_cached_records(data):
+        if not isinstance(data, dict) or data.get("schema") != 1:
+            raise KeyError("unsupported Rancher inventory cache format")
+        records = data.get("records")
+        if not isinstance(records, list) or any(
+            not isinstance(record, (list, tuple))
+            or len(record) != 2
+            or not all(isinstance(item, dict) for item in record)
+            for record in records
+        ):
+            raise KeyError("invalid Rancher inventory cache data")
+        return records
 
     def parse(self, inventory, loader, path, cache=True):
         super().parse(inventory, loader, path)
         self._read_config_data(path)
         for selector, expressions in self.get_option("cluster_compose").items():
             if not isinstance(selector, str) or not isinstance(expressions, dict):
-                raise AnsibleParserError(
-                    "cluster_compose must map cluster names or IDs to dictionaries of expressions"
-                )
-            if any(
-                not isinstance(key, str) or not isinstance(value, str)
-                for key, value in expressions.items()
-            ):
-                raise AnsibleParserError(
-                    "cluster_compose variable names and Jinja2 expressions must be strings"
-                )
+                raise AnsibleParserError("cluster_compose must map cluster names or IDs to dictionaries of expressions")
+            if any(not isinstance(key, str) or not isinstance(value, str) for key, value in expressions.items()):
+                raise AnsibleParserError("cluster_compose variable names and Jinja2 expressions must be strings")
         self._base_url = self.get_option("url").rstrip("/")
         base = urlsplit(self._base_url)
-        if (
-            base.scheme != "https"
-            or not base.netloc
-            or base.username
-            or base.query
-            or base.fragment
-        ):
-            raise AnsibleParserError(
-                "url must be an HTTPS Rancher base URL without credentials, query or fragment"
-            )
+        if base.scheme != "https" or not base.netloc or base.username or base.query or base.fragment:
+            raise AnsibleParserError("url must be an HTTPS Rancher base URL without credentials, query or fragment")
         if not self.get_option("token").strip():
             raise AnsibleParserError("Rancher token must not be empty")
         if self.get_option("timeout") <= 0 or not self.get_option("address_types"):
-            raise AnsibleParserError(
-                "timeout must be positive and address_types must not be empty"
-            )
-        requested = set(self.get_option("clusters"))
-        clusters = [
-            c
-            for c in self._clusters()
-            if (self.get_option("include_local") or c.get("id") != "local")
-        ]
-        matched = {value for c in clusters for value in (c.get("id"), c.get("name"))}
-        if requested - matched:
-            raise AnsibleParserError(
-                "Requested clusters were not found or are excluded: "
-                + ", ".join(sorted(requested - matched))
-            )
-        # Fetch everything before populating inventory, so API failures do not produce partial inventory.
-        records = []
-        for cluster in clusters:
-            if requested and not requested.intersection(
-                (cluster.get("id"), cluster.get("name"))
-            ):
-                continue
-            if not cluster.get("id"):
-                raise AnsibleParserError("Rancher cluster is missing id")
-            if any(
-                c.get("type") == "Connected" and c.get("status") == "False"
-                for c in cluster.get("conditions") or []
-            ):
-                if self.get_option("skip_disconnected"):
-                    self.display.warning(
-                        "Skipping disconnected Rancher cluster %s (%s): Connected=False"
-                        % (cluster.get("name") or cluster["id"], cluster["id"])
-                    )
-                    continue
-                raise AnsibleParserError(
-                    "Rancher cluster %s (%s) is disconnected (Connected=False); "
-                    "restore the cluster agent connection, select connected clusters using clusters, "
-                    "or enable skip_disconnected"
-                    % (cluster.get("name") or cluster["id"], cluster["id"])
-                )
-            records.extend((cluster, node) for node in self._nodes(cluster["id"]))
+            raise AnsibleParserError("timeout must be positive and address_types must not be empty")
+        user_cache_setting = self.get_option("cache")
+        cache_key = self.get_cache_key(path)
+        attempt_to_read_cache = user_cache_setting and cache
+        cache_needs_update = user_cache_setting and not cache
+
+        if attempt_to_read_cache:
+            try:
+                records = self._validate_cached_records(self._cache[cache_key])
+            except KeyError:
+                cache_needs_update = True
+        if not attempt_to_read_cache or cache_needs_update:
+            records = self._fetch_records()
+        if cache_needs_update:
+            self._cache[cache_key] = {"schema": 1, "records": records}
+
         group_owners = {}
-        for cluster, _ in records:
+        for cluster, _nodes in records:
             cluster_name = cluster.get("name") or cluster["id"]
             group = self._group(cluster_name)
-            if group in {"all", "ungrouped", "rancher_nodes"} or group.startswith(
-                "kubernetes_role_"
-            ):
-                raise AnsibleParserError(
-                    "Cluster name produces reserved inventory group %s; rename the cluster"
-                    % group
-                )
+            if group in {"all", "ungrouped", "rancher_nodes"} or group.startswith("kubernetes_role_"):
+                raise AnsibleParserError(f"Cluster name produces reserved inventory group {group}; rename the cluster")
             owner = group_owners.setdefault(group, cluster["id"])
             if owner != cluster["id"]:
                 raise AnsibleParserError(
-                    "Cluster names produce the same inventory group %s (%s and %s); "
-                    "rename the clusters or select one using clusters"
-                    % (group, owner, cluster["id"])
+                    f"Cluster names produce the same inventory group {group} "
+                    f"({owner} and {cluster['id']}); rename the clusters or select one "
+                    "using clusters"
                 )
         for cluster, node in records:
             self._populate(cluster, node)
+        if user_cache_setting:
+            self.update_cache_if_changed()

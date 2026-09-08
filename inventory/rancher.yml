@@ -12,6 +12,18 @@ validate_certs: true
 # Per-request timeout in seconds; must be positive.
 timeout: 30
 
+# Cache Rancher cluster and Kubernetes node API responses. Inventory caching is
+# disabled by default. Use a persistent cache plugin to reuse data between runs.
+cache: true
+cache_plugin: ansible.builtin.jsonfile
+# Entries older than this number of seconds are fetched again.
+cache_timeout: 300
+# Directory used by the jsonfile cache plugin. Its parent must already exist;
+# the plugin creates this final directory when needed.
+cache_connection: ~/.cache/ansible/rancher_inventory
+# Prefix for cache files or keys. Its interpretation depends on cache_plugin.
+cache_prefix: ansible_inventory_rancher_
+
 # Exact cluster names or IDs. [] selects all visible clusters.
 clusters: []
 # Example selection:
@@ -74,7 +86,7 @@ use_extra_vars: false
 
 # Omit a leading separator when a keyed group has no prefix.
 # The Ansible default is true; this example uses false for cleaner names.
-leading_separator: false
+# leading_separator: false
 
 # Derive group names from host variable values. Lists create one group per item.
 # Use [] to disable. Each entry below demonstrates a separate grouping rule.

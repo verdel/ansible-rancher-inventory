@@ -36,9 +36,7 @@ def node(name="worker-1", addresses=None):
 
 def parse(plugin, tmp_path, monkeypatch, pages, extra=""):
     config = tmp_path / "test.rancher.yml"
-    config.write_text(
-        "plugin: rancher\nurl: https://rancher.example.com\ntoken: secret\n" + extra
-    )
+    config.write_text("plugin: rancher\nurl: https://rancher.example.com\ntoken: secret\n" + extra)
     calls = []
 
     def request(url):
@@ -311,12 +309,8 @@ def test_skip_explicitly_selected_disconnected_cluster(plugin, tmp_path, monkeyp
     assert len(calls) == 1
 
 
-@pytest.mark.parametrize(
-    "conditions", [[], [{"type": "Connected", "status": "Unknown"}]]
-)
-def test_skip_disconnected_does_not_hide_other_errors(
-    plugin, tmp_path, monkeypatch, conditions
-):
+@pytest.mark.parametrize("conditions", [[], [{"type": "Connected", "status": "Unknown"}]])
+def test_skip_disconnected_does_not_hide_other_errors(plugin, tmp_path, monkeypatch, conditions):
     with pytest.raises(AnsibleParserError, match="missing items list"):
         parse(
             plugin,
@@ -351,7 +345,7 @@ def test_cluster_name_collision_rejected(plugin, tmp_path, monkeypatch, names):
 
 
 def test_cluster_without_name_falls_back_to_id(plugin, tmp_path, monkeypatch):
-    inv, _ = parse(
+    inv, _calls = parse(
         plugin,
         tmp_path,
         monkeypatch,
@@ -365,7 +359,7 @@ def test_cluster_without_name_falls_back_to_id(plugin, tmp_path, monkeypatch):
 
 
 def test_cluster_compose_overrides_and_groups(plugin, tmp_path, monkeypatch):
-    inv, _ = parse(
+    inv, _calls = parse(
         plugin,
         tmp_path,
         monkeypatch,
@@ -407,9 +401,7 @@ groups:
     assert inv.groups["admins"].hosts == [prod]
 
 
-@pytest.mark.parametrize(
-    "config", ["prod: null", "prod: []", "prod: {ansible_port: 2222}"]
-)
+@pytest.mark.parametrize("config", ["prod: null", "prod: []", "prod: {ansible_port: 2222}"])
 def test_invalid_cluster_compose(plugin, tmp_path, monkeypatch, config):
     with pytest.raises(AnsibleParserError, match="cluster_compose"):
         parse(plugin, tmp_path, monkeypatch, [], "cluster_compose:\n  " + config + "\n")
@@ -418,22 +410,16 @@ def test_invalid_cluster_compose(plugin, tmp_path, monkeypatch, config):
 @pytest.mark.parametrize("strict", ["true", "false"])
 def test_cluster_compose_respects_strict(plugin, tmp_path, monkeypatch, strict):
     pages = [{"data": [{"id": "c-one", "name": "prod"}]}, {"items": [node()]}]
-    config = (
-        "strict: "
-        + strict
-        + "\ncluster_compose:\n  prod:\n    invalid: missing_variable\n"
-    )
+    config = "strict: " + strict + "\ncluster_compose:\n  prod:\n    invalid: missing_variable\n"
     if strict == "true":
         with pytest.raises(AnsibleError, match="Could not set invalid"):
             parse(plugin, tmp_path, monkeypatch, pages, config)
     else:
-        inv, _ = parse(plugin, tmp_path, monkeypatch, pages, config)
+        inv, _calls = parse(plugin, tmp_path, monkeypatch, pages, config)
         assert "invalid" not in inv.hosts["prod__worker-1"].vars
 
 
-@pytest.mark.parametrize(
-    "name", ["all", "ungrouped", "rancher_nodes", "kubernetes-role-worker"]
-)
+@pytest.mark.parametrize("name", ["all", "ungrouped", "rancher_nodes", "kubernetes-role-worker"])
 def test_reserved_cluster_group_rejected(plugin, tmp_path, monkeypatch, name):
     with pytest.raises(AnsibleParserError, match="reserved inventory group"):
         parse(
@@ -448,7 +434,7 @@ def test_reserved_cluster_group_rejected(plugin, tmp_path, monkeypatch, name):
 
 
 def test_cluster_group_has_no_prefix(plugin, tmp_path, monkeypatch):
-    inv, _ = parse(
+    inv, _calls = parse(
         plugin,
         tmp_path,
         monkeypatch,
@@ -460,3 +446,68 @@ def test_cluster_group_has_no_prefix(plugin, tmp_path, monkeypatch):
     host = inv.hosts["rancher-test-cluster__worker-1"]
     assert inv.groups["rancher_test_cluster"].hosts == [host]
     assert "rancher_cluster_rancher_test_cluster" not in inv.groups
+
+
+def test_persistent_cache_hit_and_forced_refresh(tmp_path, monkeypatch):
+    source = tmp_path / "cache.rancher.yml"
+    cache_dir = tmp_path / "cache"
+    source.write_text(
+        "plugin: rancher\n"
+        "url: https://rancher.example.com\n"
+        "token: secret\n"
+        "cache: true\n"
+        "cache_plugin: ansible.builtin.jsonfile\n"
+        f"cache_connection: {cache_dir}\n"
+    )
+    pages = [
+        {"data": [{"id": "c-one", "name": "prod"}]},
+        {"items": [node()]},
+    ]
+    calls = []
+
+    first = inventory_loader.get("rancher")
+
+    def request(url):
+        calls.append(url)
+        return pages[len(calls) - 1]
+
+    monkeypatch.setattr(first, "_request", request)
+    first.parse(InventoryData(), DataLoader(), str(source))
+    assert len(calls) == 2
+
+    second = inventory_loader.get("rancher")
+    monkeypatch.setattr(
+        second,
+        "_request",
+        lambda url: pytest.fail("cache hit must not call Rancher"),
+    )
+    cached_inventory = InventoryData()
+    second.parse(cached_inventory, DataLoader(), str(source))
+    assert set(cached_inventory.hosts) == {"prod__worker-1"}
+
+    refreshed_pages = [
+        {"data": [{"id": "c-one", "name": "prod"}]},
+        {"items": [node("worker-2")]},
+    ]
+    refreshed_calls = []
+    third = inventory_loader.get("rancher")
+
+    def refreshed_request(url):
+        refreshed_calls.append(url)
+        return refreshed_pages[len(refreshed_calls) - 1]
+
+    monkeypatch.setattr(third, "_request", refreshed_request)
+    refreshed_inventory = InventoryData()
+    third.parse(refreshed_inventory, DataLoader(), str(source), cache=False)
+    assert len(refreshed_calls) == 2
+    assert set(refreshed_inventory.hosts) == {"prod__worker-2"}
+
+    fourth = inventory_loader.get("rancher")
+    monkeypatch.setattr(
+        fourth,
+        "_request",
+        lambda url: pytest.fail("refreshed cache must be reusable"),
+    )
+    final_inventory = InventoryData()
+    fourth.parse(final_inventory, DataLoader(), str(source))
+    assert set(final_inventory.hosts) == {"prod__worker-2"}
