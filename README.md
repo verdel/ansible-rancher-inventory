@@ -287,18 +287,33 @@ release workflow validates the release tag, reruns checks, builds the collection
 
 ```text
 ansible-rancher-inventory/
-├── galaxy.yml                 # Collection metadata: verdel.rancher
-├── meta/runtime.yml           # Supported Ansible versions
-├── plugins/inventory/rancher.py
-├── inventory/rancher.yml      # Full public configuration example
-├── tests/                     # Unit and collection installation tests
-├── .github/workflows/ci.yml   # Push / pull request checks
-├── .github/workflows/release.yml # Build and attach release archive
-├── ansible.cfg.example
-├── CHANGELOG.md
-├── CONTRIBUTING.md
-├── MAINTAINERS.md
-└── LICENSE
+├── plugins/
+│   └── inventory/rancher.py          # Rancher dynamic inventory plugin
+├── meta/
+│   └── runtime.yml                   # Collection runtime requirements
+├── inventory/
+│   └── rancher.yml                   # Complete inventory configuration example
+├── tests/
+│   ├── test_rancher.py               # Plugin behavior and cache tests
+│   └── test_collection.py            # Build, install, and FQCN loading tests
+├── .github/
+│   ├── scripts/
+│   │   ├── extract-changelog.sh      # Generate GitHub Release notes
+│   │   └── prepare-collection-tree.sh # Prepare the ansible-test layout
+│   ├── workflows/
+│   │   ├── ci.yml                    # Pull request and main branch checks
+│   │   └── release.yml               # Test, publish, and create a release
+│   └── dependabot.yml                # Automated dependency updates
+├── galaxy.yml                        # Ansible Galaxy collection metadata
+├── ansible.cfg.example               # Configuration for running from a checkout
+├── requirements.txt                  # Runtime Python dependencies
+├── requirements-dev.txt              # Development and test dependencies
+├── .pre-commit-config.yaml           # Local pre-commit hooks
+├── ruff.toml                         # Ruff lint and format configuration
+├── CHANGELOG.md                      # Release history
+├── CONTRIBUTING.md                   # Development and release instructions
+├── MAINTAINERS.md                    # Maintainer information
+└── LICENSE                           # GPL-3.0-or-later license
 ```
 
 ## License
