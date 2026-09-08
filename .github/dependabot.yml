@@ -1,6 +1,4 @@
-
 # Safe defaults: weekly checks, limited open PRs, grouped GitHub Actions bumps.
-# aiounifi uses bare integer PyPI versions - review those PRs manually before merging.
 # Security updates are separate: not delayed by schedule, groups, or cooldown.
 version: 2
 updates:
